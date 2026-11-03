@@ -2,6 +2,13 @@
 
 给任意 PDF 补上侧边栏大纲（书签）。文字版直接读文字层，扫描件走 OCR。
 
+[![Windows 免安装版](https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-Windows%20%E5%85%8D%E5%AE%89%E8%A3%85%E7%89%88%20120MB-2ea44f?style=for-the-badge&logo=windows)](https://github.com/sdgfdii/pdf-toc/releases/latest/download/pdf-toc-win64.zip)
+[![Releases](https://img.shields.io/badge/%E5%85%A8%E9%83%A8%E7%89%88%E6%9C%AC-Releases-0969da?style=for-the-badge&logo=github)](https://github.com/sdgfdii/pdf-toc/releases)
+
+**下载后解压，双击 `pdf-toc.exe`，把 PDF 拖到图标上就行。** 不用装 Python。
+
+> 可执行文件放在 Releases 里，不在源码树中（GitHub 单文件上限 100 MB，包有 120 MB）。
+
 从网上下的 PDF 十有八九没有书签，几百页只能从头翻。这个工具把标题挖出来写成 PDF 大纲，Acrobat / Edge / Chrome / WPS / macOS 预览里都能看到左侧导航树，点一下直接跳过去。
 
 ## 特性
@@ -14,7 +21,7 @@
 
 ## 免安装版（Windows）
 
-不想碰 Python 就用这个。从 [Releases](https://github.com/sdgfdii/pdf-toc/releases) 下载 `pdf-toc-win64.zip`，解压到任意目录，双击 `pdf-toc.exe`。
+不想碰 Python 就用这个。下载 [`pdf-toc-win64.zip`](https://github.com/sdgfdii/pdf-toc/releases/latest/download/pdf-toc-win64.zip)，解压到任意目录，双击 `pdf-toc.exe`。
 
 - 把 PDF 拖到 exe 图标上 → 生成同名 `.toc.json`
 - 把改好的 `.toc.json` 拖上去 → 写入书签，输出 `xxx_outline.pdf`
