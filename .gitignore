@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 输入样本与生成产物
+*.pdf
+*.toc.json
+
+.DS_Store
+Thumbs.db
