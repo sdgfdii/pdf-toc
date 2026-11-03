@@ -12,7 +12,19 @@
 - **可编辑**：先导出 JSON，改完再写入，不用重跑识别
 - **零配置**：Windows 下拖拽 bat 双击就跑
 
-## 快速开始
+## 免安装版（Windows）
+
+不想碰 Python 就用这个。从 [Releases](https://github.com/sdgfdii/pdf-toc/releases) 下载 `pdf-toc-win64.zip`，解压到任意目录，双击 `pdf-toc.exe`。
+
+- 把 PDF 拖到 exe 图标上 → 生成同名 `.toc.json`
+- 把改好的 `.toc.json` 拖上去 → 写入书签，输出 `xxx_outline.pdf`
+- 扫描件会自动识别并启用 OCR，不用加参数
+- 双击不拖文件 → 进入交互提示，也可以手动输路径
+
+> 解压后是一个文件夹（`pdf-toc.exe` + `_internal/`），**不能只拷 exe 出去**，依赖都在 `_internal` 里。
+> 体积约 265 MB，来自 PyMuPDF、ONNX Runtime 和 OCR 模型。
+
+## 从源码运行
 
 ### 1. 装依赖
 
@@ -73,6 +85,12 @@ python pdf_toc.py 文档.pdf --apply
 | `--dpi N` | OCR 渲染分辨率，默认 200 |
 | `--apply` | 读取同名 `.toc.json` 写入书签 |
 | `-o FILE` | 指定输出文件名 |
+
+### 自行构建 exe
+
+双击 `build.bat`，产物在 `dist/pdf-toc/`，同时打包成 `dist/pdf-toc-win64.zip`。
+
+用的是 `--onedir` 而不是 `--onefile`：单文件模式每次启动都要把 130 MB 解压到 `%TEMP%`，在部分机器上会被系统策略直接挡掉（`Could not create temporary directory`），而且启动要多花 5～8 秒。
 
 ## 判定逻辑
 

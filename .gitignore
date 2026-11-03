@@ -7,5 +7,14 @@ venv/
 *.pdf
 *.toc.json
 
+# 打包产物
+build/
+dist/
+*.spec
+
+# 测试沙箱
+_sandbox/
+_tmp/
+
 .DS_Store
 Thumbs.db

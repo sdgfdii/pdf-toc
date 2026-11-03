@@ -12,12 +12,15 @@
 """
 import argparse
 import json
+import os
 import re
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-import pymupdf
+os.environ.setdefault("PYMUPDF_SUGGEST_LAYOUT_ANALYZER", "0")
+
+import pymupdf  # noqa: E402
 
 CJK_NUM = "一二三四五六七八九十百千零〇两"
 RE_CHAPTER = re.compile(rf"^第[{CJK_NUM}\d]+[章篇部]")
@@ -330,41 +333,51 @@ def apply_outline(src, toc, out_path):
     return fixed
 
 
-def main():
-    setup_stdout()
-    ap = argparse.ArgumentParser(description="给 PDF 生成侧边栏大纲")
-    ap.add_argument("pdf", help="PDF 文件路径")
-    ap.add_argument("--levels", type=int, default=3, help="最多抓几级标题, 默认 3")
-    ap.add_argument("--ocr", action="store_true", help="对无文字层的页面跑 OCR")
-    ap.add_argument("--dpi", type=int, default=200, help="OCR 渲染分辨率, 默认 200")
-    ap.add_argument("--apply", action="store_true", help="按同名 .toc.json 写入书签")
-    ap.add_argument("-o", "--out", help="输出文件路径")
-    args = ap.parse_args()
+def resolve_json_pdf(json_path):
+    """demo.toc.json -> demo.pdf"""
+    name = json_path.name
+    if name.endswith(".toc.json"):
+        stem = name[: -len(".toc.json")]
+    else:
+        stem = json_path.stem
+    return json_path.with_name(stem + ".pdf")
 
-    src = Path(args.pdf)
-    if not src.is_file():
-        raise SystemExit(f"找不到文件: {src}")
 
-    json_path = src.with_suffix(".toc.json")
+def do_apply(pdf_path, json_path, out_arg):
+    if not json_path.is_file():
+        raise SystemExit(f"缺少 {json_path.name}, 先扫描一次生成它")
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+    entries = data["toc"] if isinstance(data, dict) else data
+    out_path = Path(out_arg) if out_arg else pdf_path.with_name(pdf_path.stem + "_outline.pdf")
+    if out_path.resolve() == pdf_path.resolve():
+        raise SystemExit("输出不能覆盖原文件")
+    fixed = apply_outline(pdf_path, entries, str(out_path))
+    print(f"已写入 {len(fixed)} 条书签")
+    print(f"输出: {out_path}")
+    return out_path
 
-    if args.apply:
-        if not json_path.is_file():
-            raise SystemExit(f"缺少 {json_path.name}, 先不带 --apply 跑一次生成它")
-        data = json.loads(json_path.read_text(encoding="utf-8"))
-        entries = data["toc"] if isinstance(data, dict) else data
-        out_path = Path(args.out) if args.out else src.with_name(src.stem + "_outline.pdf")
-        if out_path.resolve() == src.resolve():
-            raise SystemExit("输出不能覆盖原文件")
-        fixed = apply_outline(src, entries, str(out_path))
-        print(f"已写入 {len(fixed)} 条书签 -> {out_path}")
-        return
 
-    doc = pymupdf.open(str(src))
+def do_scan(pdf_path, args):
+    json_path = pdf_path.with_suffix(".toc.json")
+    doc = pymupdf.open(str(pdf_path))
     page_count = len(doc)
-    engine = load_ocr_engine() if args.ocr else None
+    if page_count == 0:
+        doc.close()
+        raise SystemExit("这个 PDF 没有页面")
+
+    blank = sum(1 for pg in doc if len(pg.get_text().strip()) < 20)
+    use_ocr = False
+    if not args.no_ocr:
+        if args.ocr:
+            use_ocr = True
+        elif blank and blank >= max(1, int(page_count * 0.2)):
+            print(f"检测到 {blank}/{page_count} 页没有文字层, 自动启用 OCR")
+            use_ocr = True
+
+    engine = load_ocr_engine() if use_ocr else None
     if engine is not None:
-        need = sum(1 for pg in doc if len(pg.get_text().strip()) < 20)
-        print(f"OCR 已启用: {need}/{page_count} 页无文字层, 渲染分辨率 {args.dpi} dpi")
+        print(f"OCR 模式: {blank}/{page_count} 页需识别, {args.dpi} dpi")
+
     lines = collect_lines(doc, engine=engine, dpi=args.dpi)
     lines = drop_headers_footers(lines, page_count)
     body = Counter(sz for _, _, sz, _, _ in lines).most_common(1)[0][0] if lines else 0
@@ -374,14 +387,102 @@ def main():
     if not toc:
         print("没抓到可用的标题。")
         json_path.write_text(json.dumps({"toc": []}, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"已生成空模板 {json_path.name}, 手动填 title/page/level 后再 --apply")
-        return
+        print(f"已生成空模板 {json_path.name}, 填好后把它拖到本程序上即可写入")
+        return None
 
     print_outline(toc, page_count, f"正文字号 {body}pt")
     payload = {"toc": [{"level": lv, "title": t, "page": p} for lv, t, p in toc]}
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\n已写出 {json_path.name}")
-    print("改完 json 后执行: python pdf_toc.py \"%s\" --apply" % src.name)
+    print("确认或修改后, 把这个 json 拖到本程序上即可写入书签。")
+    return json_path
+
+
+def process(target, args):
+    path = Path(target.strip().strip('"').strip("'"))
+    if not path.exists():
+        raise SystemExit(f"找不到文件: {path}")
+
+    if path.suffix.lower() == ".json":
+        pdf_path = resolve_json_pdf(path)
+        if not pdf_path.is_file():
+            raise SystemExit(f"找不到与 {path.name} 对应的 PDF: {pdf_path.name}")
+        print(f"按 {path.name} 写入 {pdf_path.name}")
+        do_apply(pdf_path, path, args.out)
+        return
+
+    if args.apply:
+        do_apply(path, path.with_suffix(".toc.json"), args.out)
+    else:
+        do_scan(path, args)
+
+
+def interactive_pick():
+    print()
+    print("  pdf-toc - PDF 侧边栏大纲生成器")
+    print("  " + "-" * 44)
+    print("  把 PDF 拖到本程序图标上  -> 扫描并生成大纲")
+    print("  把 .toc.json 拖上来      -> 按它写入书签")
+    print()
+    print("  也可以直接输入文件路径。")
+    print()
+    try:
+        return input("  路径 > ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return ""
+
+
+def should_pause():
+    if not getattr(sys, "frozen", False):
+        return False
+    try:
+        return sys.stdin is not None and sys.stdin.isatty()
+    except Exception:
+        return False
+
+
+def main():
+    setup_stdout()
+    ap = argparse.ArgumentParser(description="给 PDF 生成侧边栏大纲")
+    ap.add_argument("path", nargs="?", help="PDF 或 .toc.json 路径; 留空进入交互模式")
+    ap.add_argument("--levels", type=int, default=3, help="最多抓几级标题, 默认 3")
+    ap.add_argument("--ocr", action="store_true", help="强制对无文字层页面跑 OCR")
+    ap.add_argument("--no-ocr", action="store_true", help="完全不使用 OCR")
+    ap.add_argument("--dpi", type=int, default=200, help="OCR 渲染分辨率, 默认 200")
+    ap.add_argument("--apply", action="store_true", help="按同名 .toc.json 写入书签")
+    ap.add_argument("-o", "--out", help="输出文件路径")
+    args = ap.parse_args()
+
+    target = args.path
+    if not target:
+        target = interactive_pick()
+        if not target:
+            return
+
+    code = 0
+    try:
+        process(target, args)
+    except SystemExit as e:
+        msg = str(e)
+        if msg and msg != "None":
+            print(f"\n[错误] {msg}")
+        code = e.code if isinstance(e.code, int) else 1
+    except KeyboardInterrupt:
+        print("\n已取消")
+        code = 130
+    except Exception as e:
+        print(f"\n[错误] {type(e).__name__}: {e}")
+        code = 1
+    finally:
+        if should_pause():
+            print()
+            try:
+                input("按回车键退出...")
+            except (EOFError, KeyboardInterrupt):
+                pass
+    if code:
+        sys.exit(code)
 
 
 if __name__ == "__main__":
